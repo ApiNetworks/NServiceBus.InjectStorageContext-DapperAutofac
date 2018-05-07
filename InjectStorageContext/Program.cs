@@ -1,81 +1,127 @@
 ﻿using System;
+using System.Data.SqlClient;
+using System.Linq;
 using System.Threading.Tasks;
-using NHibernate.Cfg;
-using NHibernate.Dialect;
+using Autofac;
+using InjectStorageContext.Messages;
+using InjectStorageContext.Pipeline;
+using InjectStorageContext.Repositories;
 using NServiceBus;
-using NServiceBus.Persistence;
-using Configuration = NHibernate.Cfg.Configuration;
+using NServiceBus.Persistence.Sql;
 
-class Program
+namespace InjectStorageContext
 {
-    private static string Title = "InjectStorageContext";
-    public const string TransportConnectionString   = @"Server=localhost;Database=nservicebus;Trusted_Connection=True;App=Transport"; // Using different App values prevents lightweight transactions
-    public const string PersistenceConnectionString = @"Server=localhost;Database=nservicebus;Trusted_Connection=True;App=Persistence";
-
-    static async Task Main()
+    internal class Program
     {
-        Console.Title = Title;
+        public const string TransportConnectionString = @"Server=localhost\sqlexpress2012;Database=nservicebus;Trusted_Connection=True;App=Transport"; // Using different App values prevents lightweight transactions
+        public const string PersistenceConnectionString = @"Server=localhost\sqlexpress2012;Database=nservicebus;Trusted_Connection=True;App=Persistence";
+        private const string Title = "InjectStorageContext";
 
-        var endpointConfiguration = new EndpointConfiguration(Title);
-        endpointConfiguration.UseSerialization<JsonSerializer>();
-
-        // Transport
-
-        var transport = endpointConfiguration.UseTransport<SqlServerTransport>();
-        transport.ConnectionString(TransportConnectionString);
-
-        // Persistence
-
-        var hibernateConfig = new Configuration();
-        hibernateConfig.DataBaseIntegration(x =>
+        private static async Task Main()
         {
-            x.ConnectionString = PersistenceConnectionString;
-            x.Dialect<MsSql2012Dialect>();
-        });
-        endpointConfiguration.UsePersistence<NHibernatePersistence>().UseConfiguration(hibernateConfig);
+            Console.Title = Title;
 
-        endpointConfiguration.EnableOutbox();
+            var endpointConfiguration = new EndpointConfiguration(Title);
+            endpointConfiguration.UseSerialization<JsonSerializer>();
 
-        endpointConfiguration.SendFailedMessagesTo("error");
-        endpointConfiguration.AuditProcessedMessagesTo("audit");
+            // Transport
 
-        // Dependency injection registrations
+            var transport = endpointConfiguration.UseTransport<SqlServerTransport>();
+            transport.ConnectionString(TransportConnectionString);
 
-        endpointConfiguration.RegisterComponents(registration: x =>
-        {
-            x.ConfigureComponent<OrderRepository>(DependencyLifecycle.InstancePerUnitOfWork);
-            x.ConfigureComponent<StorageContext>(DependencyLifecycle.InstancePerUnitOfWork);
-        });
+            // Persistence
+            var persistence = endpointConfiguration.UsePersistence<SqlPersistence>();
+            persistence.SqlDialect<SqlDialect.MsSqlServer>();
+            persistence.ConnectionBuilder(() => new SqlConnection(PersistenceConnectionString));
+            persistence.SubscriptionSettings().CacheFor(TimeSpan.FromMinutes(1));
 
-        // Pipeline
+            endpointConfiguration.EnableOutbox();
 
-        endpointConfiguration.Pipeline.Register<StorageContextBehavior.Registration>();
+            endpointConfiguration.SendFailedMessagesTo("error");
+            endpointConfiguration.AuditProcessedMessagesTo("audit");
 
-        endpointConfiguration.EnableInstallers();
+            // Dependency injection registrations
+            var builder = new ContainerBuilder();
+            builder.RegisterType<OrderRepository>().AsImplementedInterfaces().InstancePerLifetimeScope();
+            builder.RegisterType<StorageContext>().AsSelf().InstancePerLifetimeScope();
+            endpointConfiguration.UseContainer<AutofacBuilder>(c => c.ExistingLifetimeScope(builder.Build()));
 
+            // Pipeline
 
-        var endpointInstance = await Endpoint.Start(endpointConfiguration)
-            .ConfigureAwait(false);
+            endpointConfiguration.Pipeline.Register<StorageContextBehavior.Registration>();
 
-        try
-        {
-            Console.WriteLine("Press ESC key to exit, any other key to send message");
+            endpointConfiguration.EnableInstallers();
 
-            while (Console.ReadKey().Key != ConsoleKey.Escape)
+            var endpointInstance = await Endpoint.Start(endpointConfiguration)
+                .ConfigureAwait(false);
+
+            try
             {
-                Console.WriteLine("Sending message...");
-                var orderSubmitted = new OrderSubmitted
+                Console.WriteLine("Press:");
+                Console.WriteLine("[1] to send OrderSubmitted");
+                Console.WriteLine("[2] to send OrderSubmittedWithError");
+                Console.WriteLine("[3] to send BulkOrderSubmittedWithError");
+                Console.WriteLine("[ESC] to exit");
+
+                ConsoleKey key;
+                while ((key = Console.ReadKey(true).Key) != ConsoleKey.Escape)
                 {
-                    OrderId = Guid.NewGuid(),
-                    Value = DateTime.UtcNow.ToLongTimeString()
-                };
-                await endpointInstance.SendLocal(orderSubmitted)
+                    switch (key)
+                    {
+                        case ConsoleKey k when k == ConsoleKey.D1 || k == ConsoleKey.NumPad1:
+                            await SendOrderSubmitted(endpointInstance);
+                            break;
+                        case ConsoleKey k when k == ConsoleKey.D2 || k == ConsoleKey.NumPad2:
+                            await SendOrderSubmittedWithError(endpointInstance);
+                            break;
+                        case ConsoleKey k when k == ConsoleKey.D3 || k == ConsoleKey.NumPad3:
+                            await SendBulkOrderSubmittedWithError(endpointInstance);
+                            break;
+                        default:
+                            Console.WriteLine("Invalid key.");
+                            break;
+                    }
+
+                   
+                }
+            }
+            finally
+            {
+                await endpointInstance.Stop()
                     .ConfigureAwait(false);
             }
         }
-        finally
+
+        private static async Task SendOrderSubmitted(IEndpointInstance endpointInstance)
         {
-            await endpointInstance.Stop()
+            Console.WriteLine("Sending OrderSubmitted message...");
+            await endpointInstance.SendLocal(new OrderSubmitted
+                {
+                    OrderId = Guid.NewGuid(),
+                    Value = DateTime.UtcNow.ToLongTimeString()
+                })
+                .ConfigureAwait(false);
+        }
+
+        private static async Task SendOrderSubmittedWithError(IEndpointInstance endpointInstance)
+        {
+            Console.WriteLine("Sending OrderSubmittedWithError message...");
+            await endpointInstance.SendLocal(new OrderSubmittedWithError
+                {
+                    OrderId = Guid.NewGuid(),
+                    Value = DateTime.UtcNow.ToLongTimeString()
+                })
+                .ConfigureAwait(false);
+        }
+
+        private static async Task SendBulkOrderSubmittedWithError(IEndpointInstance endpointInstance)
+        {
+            Console.WriteLine("Sending BulkOrderSubmittedWithError message...");
+            await endpointInstance.SendLocal(new BulkOrderSubmittedWithError
+                {
+                    OrderIds = Enumerable.Range(0, 9).Select(_ => Guid.NewGuid()).ToArray(),
+                    Value = DateTime.UtcNow.ToLongTimeString()
+                })
                 .ConfigureAwait(false);
         }
     }

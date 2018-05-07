@@ -1,26 +1,68 @@
 ﻿using System;
+using System.Linq;
 using System.Threading.Tasks;
+using InjectStorageContext.Messages;
+using InjectStorageContext.Repositories;
 using NServiceBus;
 using NServiceBus.Logging;
+using Order = InjectStorageContext.Repositories.Order;
 
-public class StoreOrderHandler : IHandleMessages<OrderSubmitted>
+namespace InjectStorageContext.Handlers
 {
-    private IOrderRepository orderRepository;
-
-    public StoreOrderHandler(IOrderRepository orderRepository)
+    public class OrderSubmittedHandler : IHandleMessages<OrderSubmitted>, IHandleMessages<OrderSubmittedWithError>, IHandleMessages<BulkOrderSubmittedWithError>
     {
-        this.orderRepository = orderRepository;
-    }
+        private static readonly ILog Log = LogManager.GetLogger<OrderSubmittedHandler>();
 
-    public async Task Handle(OrderSubmitted message, IMessageHandlerContext context)
-    {
-        LogManager.GetLogger<StoreOrderHandler>().InfoFormat("Handling order: {0}", message.OrderId);
-        var orderAccepted = new Order
+        private IOrderRepository _orderRepository;
+
+        public OrderSubmittedHandler(IOrderRepository orderRepository)
         {
-            OrderId = new Guid(context.MessageId),
-            Value = message.Value
-        };
+            _orderRepository = orderRepository;
+        }
 
-        await orderRepository.Add(orderAccepted).ConfigureAwait(false);
+        public async Task Handle(OrderSubmitted message, IMessageHandlerContext context)
+        {
+            Log.Info($"Handling order: {message.OrderId}");
+
+            var order = new Order
+            {
+                OrderId = message.OrderId,
+                Value = message.Value
+            };
+
+            await _orderRepository.Add(order).ConfigureAwait(false);
+        }
+
+        public async Task Handle(OrderSubmittedWithError message, IMessageHandlerContext context)
+        {
+            Log.Info($"Handling order with error: {message.OrderId}");
+
+            var order = new Order
+            {
+                OrderId = message.OrderId,
+                Value = message.Value
+            };
+
+            await _orderRepository.Add(order).ConfigureAwait(false);
+            
+            throw new Exception("Boom!");
+        }
+
+        public async Task Handle(BulkOrderSubmittedWithError message, IMessageHandlerContext context)
+        {
+            Log.InfoFormat("Handling bulk order with error: {0}", string.Join(", ", message.OrderIds));
+
+            var orders = message.OrderIds.Select(id => 
+                new Order
+                {
+                    OrderId = id,
+                    Value = message.Value
+                }).ToList();
+
+            await _orderRepository.Add(orders).ConfigureAwait(false);
+            
+            throw new Exception("Boom!");
+            
+        }
     }
 }

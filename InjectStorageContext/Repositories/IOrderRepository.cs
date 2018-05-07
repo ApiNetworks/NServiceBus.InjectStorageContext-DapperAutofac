@@ -1,6 +1,11 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
-public interface IOrderRepository
+namespace InjectStorageContext.Repositories
 {
-    Task Add(Order entity);
+    public interface IOrderRepository
+    {
+        Task Add(Order order);
+        Task Add(IEnumerable<Order> orders);
+    }
 }

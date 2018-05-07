@@ -1,7 +1,10 @@
 using System;
 
-public class Order
+namespace InjectStorageContext.Repositories
 {
-    public Guid OrderId { get; set; }
-    public string Value { get; set; }
+    public class Order
+    {
+        public Guid OrderId { get; set; }
+        public string Value { get; set; }
+    }
 }

@@ -3,9 +3,9 @@ using NServiceBus;
 
 namespace InjectStorageContext.Messages
 {
-    public class OrderSubmitted : IMessage
+    public class BulkOrderSubmittedWithError : IMessage
     {
-        public Guid OrderId { get; set; }
+        public Guid[] OrderIds { get; set; }
         public string Value { get; set; }
     }
 }

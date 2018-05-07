@@ -1,23 +1,42 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Threading.Tasks;
+using Dapper;
 using Dapper.Contrib.Extensions;
+using InjectStorageContext.Pipeline;
 using NServiceBus.Logging;
 
-public class OrderRepository : IOrderRepository
+namespace InjectStorageContext.Repositories
 {
-    readonly StorageContext ctxProvider;
-    IDbConnection Connection => ctxProvider.Connection;
-    IDbTransaction Transaction => ctxProvider.Transaction;
-
-    public OrderRepository(StorageContext ctxProvider)
+    public class OrderRepository : IOrderRepository
     {
-        this.ctxProvider = ctxProvider;
-    }
+        private static readonly ILog Log = LogManager.GetLogger<OrderRepository>();
+        private readonly StorageContext _storageContext;
 
-    public Task Add(Order entity)
-    {
-        LogManager.GetLogger<OrderRepository>().InfoFormat("Inserting entity...");
-        return Connection.InsertAsync(entity, Transaction);
+        public OrderRepository(StorageContext storageContext)
+        {
+            _storageContext = storageContext;
+        }
+
+        private IDbConnection Connection => _storageContext.Connection;
+        private IDbTransaction Transaction => _storageContext.Transaction;
+        
+        public async Task Add(Order order)
+        {
+            Log.Info("Inserting order...");
+
+            await Connection.InsertAsync(order, Transaction);
+        }
+
+        public async Task Add(IEnumerable<Order> orders)
+        {
+            Log.Info("Inserting multiple orders...");
+
+            foreach (var order in orders)
+            {
+                await Connection.InsertAsync(order, Transaction);
+            }
+        }
     }
 }

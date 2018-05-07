@@ -2,22 +2,26 @@ using System;
 using System.Data;
 using NServiceBus.Logging;
 
-public class StorageContext : IDisposable
+namespace InjectStorageContext.Pipeline
 {
-    public IDbConnection Connection;
-    public IDbTransaction Transaction;
-
-    static readonly ILog Log = LogManager.GetLogger<StorageContext>();
-    static long _count;
-    readonly long instance = ++_count;
-
-    public StorageContext()
+    public class StorageContext : IDisposable
     {
-        Log.Info($"Created: {instance}");
-    }
+        private static readonly ILog Log = LogManager.GetLogger<StorageContext>();
 
-    public void Dispose()
-    {
-        Log.Info($"Dispose: {instance}");
+        private static long _count;
+        private readonly long _instance = ++_count;
+
+        public IDbConnection Connection { get; set; }
+        public IDbTransaction Transaction { get; set; }
+
+        public StorageContext()
+        {
+            Log.Info($"Created: {_instance}");
+        }
+
+        public void Dispose()
+        {
+            Log.Info($"Dispose: {_instance}");
+        }
     }
 }
