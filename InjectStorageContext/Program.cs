@@ -13,8 +13,8 @@ namespace InjectStorageContext
 {
     internal class Program
     {
-        public const string TransportConnectionString = @"Server=localhost\sqlexpress2012;Database=nservicebus;Trusted_Connection=True;App=Transport"; // Using different App values prevents lightweight transactions
-        public const string PersistenceConnectionString = @"Server=localhost\sqlexpress2012;Database=nservicebus;Trusted_Connection=True;App=Persistence";
+        public const string TransportConnectionString = @"Server=localhost;Database=nservicebus;Trusted_Connection=True;App=Transport"; // Using different App values prevents lightweight transactions
+        public const string PersistenceConnectionString = @"Server=localhost;Database=nservicebus;Trusted_Connection=True;App=Persistence";
         private const string Title = "InjectStorageContext";
 
         private static async Task Main()
